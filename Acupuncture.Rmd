@@ -1,0 +1,211 @@
+---
+title: "acupuncture"
+author: "Shinghei Mok"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Step 1: Load packages
+```{r}
+rm(list=ls())
+pacman::p_load(VIM, mice, lattice, tidyverse, MASS, brant, broom, funModeling, jtools, car, lmtest, multcomp, ggplot2, DiagrammeR, table1)
+```
+
+## Step 2: Load data
+```{r}
+load("C:/Users/User/Desktop/ICPSR_31901/DS0001/31901-0001-Data.rda")
+file <- da31901.0001
+rm(da31901.0001)
+```
+
+## Step 3: Data exclusion
+```{r}
+file_selected <- file %>% dplyr::select("SWANID", "ACUPUNC7", "BMI7", "APPETIT7", "RACE", "INCOME7", "EXERCIS7")
+
+## Remove observation without Acupuncture status, appetite or BMI
+file_ex <- file_selected %>% drop_na(c(ACUPUNC7, BMI7, APPETIT7))
+
+## Remove outliers for BMI based on +-1.5IQR
+IQR(file_ex$BMI7)
+quantile(file_ex$BMI7)
+file_ex2 <- file_ex %>% dplyr:: filter(BMI7>=23.4-9.41&BMI7<=32.81+9.41)
+
+## Check percent keep
+nrow(file_ex2)/nrow(file_ex)
+
+```
+
+
+## Step 3: Missing Data imputation
+```{r}
+file_imp <- mice(file_ex2, m=5, maxit=5, seed=219)
+file_imp1 <- mice::complete(data=file_imp, action=1)
+
+```
+
+## Step 4: Data cleaning
+```{r}
+
+## Re-categorize variables
+file_cat <- file_imp1 %>% mutate(BMI = case_when(BMI7<25 ~ 0, BMI7>=25 & BMI7<30 ~ 1, BMI7>=30 ~ 2))
+
+## Rename variables
+file_cat$ACUPUNC7 <- factor(file_cat$ACUPUNC7, labels=c(0:1))
+file_cat$BMI <- factor(file_cat$BMI, levels=c(0:2), labels=c(0:2))
+file_cat$APPETIT7 <- factor(file_cat$APPETIT7, labels=c(0:3))
+file_cat$RACE <- factor(file_cat$RACE, labels=c("black", "chinese", "japanese", "white", "hispanic"))
+file_cat$INCOME7 <- factor(file_cat$INCOME7, labels=c(0:3))
+file_cat$EXERCIS7 <- factor(file_cat$EXERCIS7, labels=c(0:1))
+file_cleaned <- file_cat %>% dplyr::select("SWANID", "ACUPUNC7", "BMI7", "BMI", "APPETIT7", "RACE", "INCOME7", "EXERCIS7")
+
+summary(file_cleaned)
+```
+
+
+## Step 4: Visualization
+```{r}
+## Boxplot of BMI ~ Acupuncture status
+  ggplot(file_cleaned, aes(x = ACUPUNC7, y = BMI7)) +
+      geom_boxplot() +
+      labs(x = "Acupuncture used in the past 12 months", y = "BMI (kg/m2)") + scale_x_discrete(labels=c("No","Yes"))
+      theme_bw()
+
+## Mean of BMI ~ Acupuncture status
+by(file_cleaned$BMI7, file_cleaned$ACUPUNC7, mean)
+
+## Describe data
+describe(file_cleaned)
+
+table(file_cleaned$BMI, file_cleaned$ACUPUNC7)
+table(file_cleaned$APPETIT7, file_cleaned$ACUPUNC7)
+
+ggplot(file_cleaned, aes(x=BMI7))+geom_histogram(bins=15)
+
+## Exclusion figure 1
+grViz("digraph flowchart {
+
+      # node definitions with substituted label text
+      node [fontname = Helvetica, shape = rectangle, fontsize=10] 
+      # notes indicate how many boxes you will have in your diagram. Since I have two sets of exclusions, I will have three nodes.
+      tab1 [label = '@@1'] # starting
+      tab2 [label = '@@2'] # exclusion 1
+      tab3 [label = '@@3'] # exclusion 2
+      
+      # edge definitions with the node IDs are used to indicate how the rectangle boxes flow from each other. This is a simple flow chart but I could create branching instead as below
+      tab1 -> tab2 -> tab3 
+}
+      #This set of code provides the text in each rectangle box.
+      [1]: 'Records from SWAN Visit 07 n=2,413'
+      [2]: 'Excluding 327 individuals with incomplete BMI, acupuncture or appetite records n=2,076'
+      [3]: 'Excluding 126 individuals with extreme BMI n=1,950'
+      ")
+
+
+## Table 1
+label(file$RACE)<-"Race"
+label(file$INCOME7)<-"Household annual income ($)"
+label(file$EXERCIS7)<-"Exercise history over the past week"
+label(file$APPETIT7)<-"Appetite over the past week"
+label(file$BMI7)<-"BMI"
+label(file$ACUPUNC7)<-"Use of Acupuncture"
+
+table1 <-
+  table1(~RACE + INCOME7 + EXERCIS7 + APPETIT7 + BMI7|ACUPUNC7, overall="Total", rowlabelhead="Use of Acupuncture", file)
+
+write.csv(table1,"C:/Users/User/Downloads/table1.csv") 
+
+##DAG
+dag {
+"Acupuncture use" [exposure,pos="-1.942,0.396"]
+Appetite [pos="-0.115,1.034"]
+BMI [outcome,pos="0.556,0.435"]
+Income [pos="-0.285,-0.328"]
+Race [pos="-1.058,-0.312"]
+"Acupuncture use" -> Appetite
+"Acupuncture use" -> BMI
+Appetite -> BMI
+Income -> "Acupuncture use"
+Income -> Appetite
+Income -> BMI
+Race -> "Acupuncture use"
+Race -> Appetite
+Race -> BMI
+}
+
+
+```
+
+
+## Step 5: Ordinal regression
+```{r}
+
+## Probablility table
+prop.table(table(file_cleaned$ACUPUNC7, file_cleaned$BMI),1)
+prop.table(table(file_cleaned$BMI, file_cleaned$ACUPUNC7),1)
+
+## Univariate model (BMI~acupuncture)
+model1 <- polr(BMI ~ ACUPUNC7, Hess=TRUE, data=file_cleaned)
+summary(model1)
+tidy1 <- tidy(model1, conf.int=TRUE, exponentiate = TRUE, p.values=TRUE)
+tidy1
+brant(model1)
+
+## Univariate model (appetite~acupuncture)
+model2 <- polr(APPETIT7 ~ ACUPUNC7, Hess=TRUE, data=file_cleaned)
+summary(model2)
+tidy(model2, conf.int=TRUE, exponentiate = TRUE, p.values=TRUE)
+brant(model2)
+
+## Multivariate model (BMI)
+model3 <- polr(BMI ~ ACUPUNC7+RACE+INCOME7, Hess=TRUE, data=file_cleaned)
+summary(model3)
+tidy(model3, conf.int=TRUE, exponentiate = TRUE, p.values=TRUE)
+brant(model3)
+
+
+## Multivariate model (appetite)
+model4 <- polr(APPETIT7 ~ ACUPUNC7+RACE+INCOME7, Hess=TRUE, data=file_cleaned)
+summary(model3)
+tidy(model4, conf.int=TRUE, exponentiate = TRUE, p.values=TRUE)
+brant(model4)
+
+## exp(logodds)
+### underweight & normal | overweight
+exp(-2.4612)
+### underweight & normal & overweight | obese
+exp(-1.0768)
+
+```
+
+## Step 6: Testing multicollinearity
+```{r}
+vif(model3)
+vif(model4)
+
+```
+
+## Step 7: Effect modification
+```{r}
+
+## Test modification hypothesis with lrtest
+model3_without <- polr(BMI ~ ACUPUNC7+RACE+INCOME7+EXERCIS7, Hess=TRUE, data=file_cleaned)
+model3_with <- polr(BMI ~ ACUPUNC7+RACE+INCOME7+EXERCIS7+ACUPUNC7*EXERCIS7, Hess=TRUE, data=file_cleaned)
+
+lrtest(model3_without, model3_with)
+lrtest(model3_with, model3_without)
+
+## Test modification hypothesis with lrtest
+model4_without <- polr(APPETIT7 ~ ACUPUNC7+RACE+INCOME7+EXERCIS7, Hess=TRUE, data=file_cleaned)
+model4_with <- polr(APPETIT7 ~ ACUPUNC7+RACE+INCOME7+EXERCIS7+ACUPUNC7*EXERCIS7, Hess=TRUE, data=file_cleaned)
+
+lrtest(model4_without, model4_with)
+lrtest(model4_with, model4_without)
+
+
+
+```
+
