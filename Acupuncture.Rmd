@@ -82,6 +82,7 @@ describe(file_cleaned)
 
 table(file_cleaned$BMI, file_cleaned$ACUPUNC7)
 table(file_cleaned$APPETIT7, file_cleaned$ACUPUNC7)
+table(file_cleaned$BMI, file_cleaned$APPETIT7)
 
 ggplot(file_cleaned, aes(x=BMI7))+geom_histogram(bins=15)
 
@@ -160,31 +161,42 @@ summary(model2)
 tidy(model2, conf.int=TRUE, exponentiate = TRUE, p.values=TRUE)
 brant(model2)
 
-## Multivariate model (BMI)
-model3 <- polr(BMI ~ ACUPUNC7+RACE+INCOME7, Hess=TRUE, data=file_cleaned)
+## Univariate model (BMI~appetite)
+model3 <- polr(BMI ~ APPETIT7, Hess=TRUE, data=file_cleaned)
 summary(model3)
 tidy(model3, conf.int=TRUE, exponentiate = TRUE, p.values=TRUE)
 brant(model3)
 
-
-## Multivariate model (appetite)
-model4 <- polr(APPETIT7 ~ ACUPUNC7+RACE+INCOME7, Hess=TRUE, data=file_cleaned)
-summary(model3)
+## Multivariate model (BMI~acupuncture+confounders)
+model4 <- polr(BMI ~ ACUPUNC7+RACE+INCOME7, Hess=TRUE,
+               data=file_cleaned)
+summary(model4)
 tidy(model4, conf.int=TRUE, exponentiate = TRUE, p.values=TRUE)
 brant(model4)
 
-## exp(logodds)
-### underweight & normal | overweight
-exp(-2.4612)
-### underweight & normal & overweight | obese
-exp(-1.0768)
+
+## Multivariate model (appetite~acupuncture+confounders)
+model5 <- polr(APPETIT7 ~ ACUPUNC7+RACE+INCOME7, Hess=TRUE,
+               data=file_cleaned)
+summary(model5)
+tidy(model5, conf.int=TRUE, exponentiate = TRUE, p.values=TRUE)
+brant(model5)
+
+## Multivariate model (BMI~appetite+confounders)
+model6 <- polr(BMI ~ APPETIT7 + RACE + INCOME7, Hess=TRUE, 
+               data=file_cleaned)
+summary(model6)
+tidy(model6, conf.int=TRUE, exponentiate = TRUE, p.values=TRUE)
+brant(model6)
+
 
 ```
 
 ## Step 6: Testing multicollinearity
 ```{r}
-vif(model3)
 vif(model4)
+vif(model5)
+vif(model6)
 
 ```
 
